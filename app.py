@@ -52,7 +52,6 @@ def handle_http_error(exc):
 
 @app.errorhandler(Exception)
 def handle_unexpected(exc):
-    # Log the exception type only: no tracebacks, paths or values reach clients.
     app.logger.error("unhandled error: %s", type(exc).name)
     return _error(500, "internal_error", "internal error")
 
@@ -63,7 +62,6 @@ def _reject_constant(name):
 
 @app.route("/", methods=["GET", "HEAD"])
 def root():
-    # The RelayMiner checks the backend at the root path. Must return 200 JSON.
     return jsonify({"service": SERVICE_ID, "status": "ok"}), 200
 
 
@@ -119,5 +117,4 @@ def normalize_endpoint():
 
 
 if name == "main":
-    # Local development only. Production runs Gunicorn (see gunicorn.conf.py).
     app.run(host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", "8080")))
