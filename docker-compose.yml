@@ -1,5 +1,7 @@
-# Local and staging use only. It publishes the backend on localhost only.
-# On the Pocket Beta sandbox the allowed host ports are 28000-28099.
+# Pocket Beta sandbox deployment.
+# Bound to the Docker bridge gateway so the operator's Beta supplier
+# (running in the host's root Docker) can reach it at 172.17.0.1:28080.
+# Local runs: change the bind address back to 127.0.0.1.
 services:
   schemify:
     build:
@@ -11,7 +13,7 @@ services:
     environment:
       PORT: "8080"
     ports:
-      - "127.0.0.1:${SCHEMIFY_HOST_PORT:-28080}:8080"
+      - "172.17.0.1:${SCHEMIFY_HOST_PORT:-28080}:8080"
     read_only: true
     tmpfs:
       - /tmp
