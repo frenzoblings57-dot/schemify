@@ -8,11 +8,11 @@ from werkzeug.exceptions import HTTPException
 from normalizer import SchemaError, normalize
 
 SERVICE_ID = "schemify"
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.2.1"
 SCHEMA_VERSION = "1"
 MAX_BODY_BYTES = int(os.environ.get("MAX_BODY_BYTES", "262144"))
 
-app = Flask(__name__)
+app = Flask(name)
 app.config["MAX_CONTENT_LENGTH"] = MAX_BODY_BYTES
 app.json.sort_keys = True
 
@@ -53,12 +53,18 @@ def handle_http_error(exc):
 @app.errorhandler(Exception)
 def handle_unexpected(exc):
     # Log the exception type only: no tracebacks, paths or values reach clients.
-    app.logger.error("unhandled error: %s", type(exc).__name__)
+    app.logger.error("unhandled error: %s", type(exc).name)
     return _error(500, "internal_error", "internal error")
 
 
 def _reject_constant(name):
     raise ValueError("invalid JSON constant")
+
+
+@app.route("/", methods=["GET", "HEAD"])
+def root():
+    # The RelayMiner checks the backend at the root path. Must return 200 JSON.
+    return jsonify({"service": SERVICE_ID, "status": "ok"}), 200
 
 
 @app.get("/v1/health")
@@ -112,6 +118,6 @@ def normalize_endpoint():
     return jsonify(result), 200
 
 
-if __name__ == "__main__":
+if name == "main":
     # Local development only. Production runs Gunicorn (see gunicorn.conf.py).
     app.run(host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", "8080")))
