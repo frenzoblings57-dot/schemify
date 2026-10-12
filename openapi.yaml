@@ -1,0 +1,163 @@
+openapi: 3.1.0
+info:
+  title: Schemify
+  version: 0.2.0
+  description: >
+    Normalizes a JSON object against a simple type schema and reports every change.
+    Every response, including errors, is a JSON object. Results are deterministic.
+servers:
+  - url: https://beta.schemify.com.ng
+    description: Pocket Beta/TestNet
+paths:
+  /v1/health:
+    get:
+      summary: Cheap liveness check
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              examples:
+                ok:
+                  value: {status: ok}
+  /v1/version:
+    get:
+      summary: Service identity and version
+      responses:
+        "200":
+          description: Service identity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Version"
+              examples:
+                version:
+                  value: {service: schemify, version: 0.2.0, schema_version: "1", commit: unknown}
+  /v1/normalize:
+    post:
+      summary: Normalize a JSON object against a schema
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NormalizeRequest"
+            examples:
+              messy_user:
+                value:
+                  data: {UserID: "123", Name: Frenzo}
+                  schema: {user_id: number, name: string, active: boolean}
+              probe:
+                value:
+                  data: {user_id: "123"}
+                  schema: {user_id: number}
+      responses:
+        "200":
+          description: Normalized data with a change and error report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NormalizeResponse"
+              examples:
+                messy_user:
+                  value:
+                    normalized: {name: Frenzo, user_id: 123}
+                    changes:
+                      - "mapped key 'Name' -> 'name'"
+                      - "mapped key 'UserID' -> 'user_id'"
+                      - "'user_id': coerced string to number"
+                    errors:
+                      - "'active': required field missing entirely"
+                probe:
+                  value:
+                    normalized: {user_id: 123}
+                    changes:
+                      - "'user_id': coerced string to number"
+                    errors: []
+        "400":
+          description: Malformed JSON, or missing or non-object data or schema
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+              examples:
+                invalid_json:
+                  value: {error: request body must be valid JSON, code: invalid_json}
+        "413":
+          description: Request body is larger than the limit (262144 bytes by default)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+              examples:
+                too_large:
+                  value: {error: request body exceeds 262144 bytes, code: payload_too_large}
+        "415":
+          description: Content-Type is not application/json
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+              examples:
+                wrong_type:
+                  value: {error: Content-Type must be application/json, code: unsupported_media_type}
+        "422":
+          description: The schema uses a type Schemify does not support
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+              examples:
+                bad_type:
+                  value: {error: "'age': unsupported type \"integer\"", code: unsupported_schema}
+        "500":
+          description: Unexpected server error (no details are exposed)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+              examples:
+                internal:
+                  value: {error: internal error, code: internal_error}
+components:
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: {type: string, const: ok}
+    Version:
+      type: object
+      required: [service, version, schema_version, commit]
+      properties:
+        service: {type: string, const: schemify}
+        version: {type: string}
+        schema_version: {type: string}
+        commit: {type: string}
+    NormalizeRequest:
+      type: object
+      required: [data, schema]
+      properties:
+        data:
+          type: object
+          description: The messy input. Unknown fields are ignored.
+        schema:
+          type: object
+          description: Map of target field name to a supported type.
+          additionalProperties:
+            type: string
+            enum: [string, number, boolean, array, object]
+    NormalizeResponse:
+      type: object
+      required: [normalized, changes, errors]
+      properties:
+        normalized: {type: object}
+        changes:
+          type: array
+          items: {type: string}
+        errors:
+          type: array
+          items: {type: string}
+    Error:
+      type: object
+      required: [error, code]
+      properties:
+        error: {type: string}
+        code: {type: string}

@@ -1,0 +1,21 @@
+# Local and staging use only. It publishes the backend on localhost only.
+# On the Pocket Beta sandbox the allowed host ports are 28000-28099.
+services:
+  schemify:
+    build:
+      context: .
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-dev}
+    image: schemify:${SCHEMIFY_TAG:-dev}
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+    ports:
+      - "127.0.0.1:${SCHEMIFY_HOST_PORT:-28080}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

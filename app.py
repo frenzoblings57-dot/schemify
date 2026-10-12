@@ -1,49 +1,117 @@
-from flask import Flask, request, jsonify
-from normalizer import normalize
+"""Schemify HTTP API. Every response, including errors, is a JSON object."""
+import json
+import os
 
-app = Flask(__name__)
+from flask import Flask, jsonify, request
+from werkzeug.exceptions import HTTPException
+
+from normalizer import SchemaError, normalize
 
 SERVICE_ID = "schemify"
-VERSION = "0.1.0"
+APP_VERSION = "0.2.0"
+SCHEMA_VERSION = "1"
+MAX_BODY_BYTES = int(os.environ.get("MAX_BODY_BYTES", "262144"))
+
+app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = MAX_BODY_BYTES
+app.json.sort_keys = True
+
+_ERROR_CODES = {
+    400: "bad_request",
+    404: "not_found",
+    405: "method_not_allowed",
+    413: "payload_too_large",
+    415: "unsupported_media_type",
+}
 
 
-# --- Required probe endpoints (Pocket checks these to confirm the service is alive) ---
+def _error(status, code, message):
+    response = jsonify({"error": message, "code": code})
+    response.status_code = status
+    return response
 
-@app.route("/v1/version", methods=["GET"])
-def version():
-    return jsonify({"service": SERVICE_ID, "version": VERSION}), 200
+
+@app.errorhandler(HTTPException)
+def handle_http_error(exc):
+    status = exc.code or 500
+    messages = {
+        404: "not found",
+        405: "method not allowed",
+        413: f"request body exceeds {MAX_BODY_BYTES} bytes",
+    }
+    response = _error(
+        status,
+        _ERROR_CODES.get(status, "http_error"),
+        messages.get(status, (exc.name or "error").lower()),
+    )
+    allowed = getattr(exc, "valid_methods", None)
+    if status == 405 and allowed:
+        response.headers["Allow"] = ", ".join(sorted(allowed))
+    return response
 
 
-@app.route("/v1/health", methods=["GET"])
+@app.errorhandler(Exception)
+def handle_unexpected(exc):
+    # Log the exception type only: no tracebacks, paths or values reach clients.
+    app.logger.error("unhandled error: %s", type(exc).__name__)
+    return _error(500, "internal_error", "internal error")
+
+
+def _reject_constant(name):
+    raise ValueError("invalid JSON constant")
+
+
+@app.get("/v1/health")
 def health():
     return jsonify({"status": "ok"}), 200
 
 
-# --- The actual service ---
+@app.get("/healthz")
+def healthz():
+    return jsonify({"status": "ok"}), 200
 
-@app.route("/v1/normalize", methods=["POST"])
+
+@app.get("/v1/version")
+def version():
+    return jsonify(
+        {
+            "service": SERVICE_ID,
+            "version": APP_VERSION,
+            "schema_version": SCHEMA_VERSION,
+            "commit": os.environ.get("GIT_COMMIT", "unknown"),
+        }
+    ), 200
+
+
+@app.post("/v1/normalize")
 def normalize_endpoint():
-    body = request.get_json(silent=True)
+    mimetype = request.mimetype or ""
+    if mimetype != "application/json" and not mimetype.endswith("+json"):
+        return _error(415, "unsupported_media_type", "Content-Type must be application/json")
 
-    if body is None:
-        return jsonify({"error": "request body must be valid JSON"}), 400
+    raw = request.get_data(cache=False)
+    try:
+        body = json.loads(raw, parse_constant=_reject_constant)
+    except (ValueError, RecursionError):
+        return _error(400, "invalid_json", "request body must be valid JSON")
 
-    raw_data = body.get("data")
+    if not isinstance(body, dict):
+        return _error(400, "invalid_request", "request body must be a JSON object")
+
+    data = body.get("data")
     schema = body.get("schema")
+    if data is None or schema is None:
+        return _error(400, "invalid_request", "request must include both 'data' and 'schema' fields")
+    if not isinstance(data, dict) or not isinstance(schema, dict):
+        return _error(400, "invalid_request", "'data' and 'schema' must both be JSON objects")
 
-    if raw_data is None or schema is None:
-        return jsonify({
-            "error": "request must include both 'data' and 'schema' fields"
-        }), 400
-
-    if not isinstance(raw_data, dict) or not isinstance(schema, dict):
-        return jsonify({
-            "error": "'data' and 'schema' must both be JSON objects"
-        }), 400
-
-    result = normalize(raw_data, schema)
+    try:
+        result = normalize(data, schema)
+    except SchemaError as exc:
+        return _error(422, "unsupported_schema", str(exc))
     return jsonify(result), 200
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    # Local development only. Production runs Gunicorn (see gunicorn.conf.py).
+    app.run(host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", "8080")))
