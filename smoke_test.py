@@ -35,8 +35,25 @@ def main():
                         {"data": {"user_id": "123"}, "schema": {"user_id": "number"}})
     checks.append(("POST /v1/normalize", status == 200 and body.get("normalized") == {"user_id": 123}))
 
-    status, body = call(base, "POST", "/v1/normalize", {"data": {}, "schema": {"a": "integer"}})
+    status, body = call(base, "POST", "/v1/normalize", {"data": {}, "schema": {"a": "float"}})
     checks.append(("422 on unsupported type", status == 422 and "error" in body))
+
+    status, body = call(base, "POST", "/v1/normalize",
+                        {"data": {"Price": "$1,200", "when": "23 Oct 2026"},
+                         "schema": {"price": "money", "when": "date"}})
+    checks.append(("rich types (money, date)",
+                   status == 200 and body.get("normalized") == {"price": 1200, "when": "2026-10-23"}))
+
+    status, body = call(base, "POST", "/v1/batch",
+                        {"schema": {"id": "integer"}, "records": [{"id": "1"}, {"id": "x"}]})
+    checks.append(("POST /v1/batch",
+                   status == 200 and body.get("summary") == {"records": 2, "records_with_errors": 1}))
+
+    status, body = call(base, "POST", "/v1/repair", {"text": "```json\n{'a': 1,}\n```"})
+    checks.append(("POST /v1/repair", status == 200 and body.get("parsed") == {"a": 1}))
+
+    status, body = call(base, "POST", "/v1/repair", {"text": "no json here"})
+    checks.append(("422 on unrepairable text", status == 422 and body.get("code") == "unrepairable"))
 
     for name, ok in checks:
         print(("PASS  " if ok else "FAIL  ") + name)

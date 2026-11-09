@@ -1,163 +1,654 @@
 openapi: 3.1.0
 info:
   title: Schemify
-  version: 0.2.0
-  description: >
-    Normalizes a JSON object against a simple type schema and reports every change.
-    Every response, including errors, is a JSON object. Results are deterministic.
+  version: 0.3.0
+  description: Cleans and repairs JSON for AI agents. Every response, including errors, is a JSON object. Results
+    are deterministic.
 servers:
-  - url: https://beta.schemify.com.ng
-    description: Pocket Beta/TestNet
+- url: https://beta.schemify.com.ng
+  description: Pocket Beta/TestNet
 paths:
   /v1/health:
     get:
       summary: Cheap liveness check
       responses:
-        "200":
+        '200':
           description: Service is up
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Health"
+                $ref: '#/components/schemas/Health'
               examples:
                 ok:
-                  value: {status: ok}
+                  summary: ok
+                  value:
+                    status: ok
   /v1/version:
     get:
       summary: Service identity and version
       responses:
-        "200":
+        '200':
           description: Service identity
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Version"
+                $ref: '#/components/schemas/Version'
               examples:
                 version:
-                  value: {service: schemify, version: 0.2.0, schema_version: "1", commit: unknown}
+                  summary: version
+                  value:
+                    commit: unknown
+                    schema_version: '1'
+                    service: schemify
+                    version: 0.3.0
   /v1/normalize:
     post:
       summary: Normalize a JSON object against a schema
+      description: Fixes wrong types, mismatched key names and missing fields, and lists every change. Supports
+        nested objects, lists, dates, money, percent, enums and defaults.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/NormalizeRequest"
+              $ref: '#/components/schemas/NormalizeRequest'
             examples:
               messy_user:
+                summary: messy user
                 value:
-                  data: {UserID: "123", Name: Frenzo}
-                  schema: {user_id: number, name: string, active: boolean}
+                  data:
+                    UserID: '123'
+                    Name: Frenzo
+                  schema:
+                    user_id: number
+                    name: string
+                    active: boolean
               probe:
+                summary: probe
                 value:
-                  data: {user_id: "123"}
-                  schema: {user_id: number}
+                  data:
+                    user_id: '123'
+                  schema:
+                    user_id: number
+              rich_types:
+                summary: rich types
+                value:
+                  data:
+                    Price: $1,200
+                    when: 23 Oct 2026
+                    status: ' OPEN '
+                  schema:
+                    price: money
+                    when: date
+                    status:
+                      type: string
+                      enum:
+                      - open
+                      - closed
+                    retries:
+                      type: integer
+                      default: 3
+              nested:
+                summary: nested
+                value:
+                  data:
+                    User:
+                      ID: '7'
+                      Address:
+                        Zip: 12345
+                    orders:
+                    - price: $5
+                      Date: '2026-01-02'
+                  schema:
+                    user:
+                      type: object
+                      properties:
+                        id: integer
+                        address:
+                          type: object
+                          properties:
+                            zip: string
+                    orders:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          price: money
+                          date: date
       responses:
-        "200":
+        '200':
           description: Normalized data with a change and error report
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/NormalizeResponse"
+                $ref: '#/components/schemas/NormalizeResponse'
               examples:
                 messy_user:
+                  summary: messy user
                   value:
-                    normalized: {name: Frenzo, user_id: 123}
                     changes:
-                      - "mapped key 'Name' -> 'name'"
-                      - "mapped key 'UserID' -> 'user_id'"
-                      - "'user_id': coerced string to number"
+                    - mapped key 'Name' -> 'name'
+                    - mapped key 'UserID' -> 'user_id'
+                    - '''user_id'': coerced string to number'
                     errors:
-                      - "'active': required field missing entirely"
+                    - '''active'': required field missing entirely'
+                    normalized:
+                      name: Frenzo
+                      user_id: 123
                 probe:
+                  summary: probe
                   value:
-                    normalized: {user_id: 123}
                     changes:
-                      - "'user_id': coerced string to number"
+                    - '''user_id'': coerced string to number'
                     errors: []
-        "400":
+                    normalized:
+                      user_id: 123
+                rich_types:
+                  summary: rich types
+                  value:
+                    changes:
+                    - mapped key 'Price' -> 'price'
+                    - '''price'': coerced money string to number'
+                    - '''retries'': used default value'
+                    - '''status'': matched allowed value'
+                    - '''when'': converted date to ISO 8601'
+                    errors: []
+                    normalized:
+                      price: 1200
+                      retries: 3
+                      status: open
+                      when: '2026-10-23'
+                nested:
+                  summary: nested
+                  value:
+                    changes:
+                    - mapped key 'orders[0].Date' -> 'orders[0].date'
+                    - '''orders[0].price'': coerced money string to number'
+                    - mapped key 'User' -> 'user'
+                    - mapped key 'user.Address' -> 'user.address'
+                    - mapped key 'user.address.Zip' -> 'user.address.zip'
+                    - '''user.address.zip'': coerced number to string'
+                    - mapped key 'user.ID' -> 'user.id'
+                    - '''user.id'': coerced string to integer'
+                    errors: []
+                    normalized:
+                      orders:
+                      - date: '2026-01-02'
+                        price: 5
+                      user:
+                        address:
+                          zip: '12345'
+                        id: 7
+        '400':
           description: Malformed JSON, or missing or non-object data or schema
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/Error"}
+              schema:
+                $ref: '#/components/schemas/Error'
               examples:
                 invalid_json:
-                  value: {error: request body must be valid JSON, code: invalid_json}
-        "413":
+                  summary: invalid json
+                  value:
+                    code: invalid_json
+                    error: request body must be valid JSON
+                  x-request:
+                    content_type: application/json
+                    body: '{bad'
+                missing_field:
+                  summary: missing schema
+                  value:
+                    code: invalid_request
+                    error: request must include both 'data' and 'schema' fields
+                  x-request:
+                    content_type: application/json
+                    body:
+                      data: {}
+        '413':
           description: Request body is larger than the limit (262144 bytes by default)
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/Error"}
+              schema:
+                $ref: '#/components/schemas/Error'
               examples:
                 too_large:
-                  value: {error: request body exceeds 262144 bytes, code: payload_too_large}
-        "415":
+                  summary: body too large
+                  value:
+                    code: payload_too_large
+                    error: request body exceeds 262144 bytes
+        '415':
           description: Content-Type is not application/json
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/Error"}
+              schema:
+                $ref: '#/components/schemas/Error'
               examples:
                 wrong_type:
-                  value: {error: Content-Type must be application/json, code: unsupported_media_type}
-        "422":
-          description: The schema uses a type Schemify does not support
+                  summary: wrong content type
+                  value:
+                    code: unsupported_media_type
+                    error: Content-Type must be application/json
+                  x-request:
+                    content_type: text/plain
+                    body: '{}'
+        '422':
+          description: The schema is not valid
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/Error"}
+              schema:
+                $ref: '#/components/schemas/Error'
               examples:
                 bad_type:
-                  value: {error: "'age': unsupported type \"integer\"", code: unsupported_schema}
-        "500":
+                  summary: unsupported type
+                  value:
+                    code: unsupported_schema
+                    error: '''age'': unsupported type "float"'
+                  x-request:
+                    content_type: application/json
+                    body:
+                      data: {}
+                      schema:
+                        age: float
+                bad_enum:
+                  summary: empty enum
+                  value:
+                    code: unsupported_schema
+                    error: '''a'': enum must be a non-empty list of strings'
+                  x-request:
+                    content_type: application/json
+                    body:
+                      data: {}
+                      schema:
+                        a:
+                          type: string
+                          enum: []
+        '500':
           description: Unexpected server error (no details are exposed)
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/Error"}
+              schema:
+                $ref: '#/components/schemas/Error'
               examples:
                 internal:
-                  value: {error: internal error, code: internal_error}
+                  summary: internal error
+                  value:
+                    code: internal_error
+                    error: internal error
+  /v1/batch:
+    post:
+      summary: Normalize many records with one schema
+      description: Up to 100 records per call. One bad record never stops the others.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchRequest'
+            examples:
+              records:
+                summary: records
+                value:
+                  schema:
+                    id: integer
+                    name: string
+                  records:
+                  - ID: '1'
+                    name: a
+                  - id: x
+                  - not an object
+      responses:
+        '200':
+          description: One result per record, in order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchResponse'
+              examples:
+                records:
+                  summary: records
+                  value:
+                    results:
+                    - changes:
+                      - mapped key 'ID' -> 'id'
+                      - '''id'': coerced string to integer'
+                      errors: []
+                      index: 0
+                      normalized:
+                        id: 1
+                        name: a
+                    - changes: []
+                      errors:
+                      - '''id'': could not coerce string to integer'
+                      - '''name'': required field missing entirely'
+                      index: 1
+                      normalized: {}
+                    - changes: []
+                      errors:
+                      - record is not an object
+                      index: 2
+                      normalized: {}
+                    summary:
+                      records: 3
+                      records_with_errors: 2
+        '400':
+          description: Bad request shape, or too many records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missing_records:
+                  summary: missing records
+                  value:
+                    code: invalid_request
+                    error: request must include both 'schema' and 'records' fields
+                  x-request:
+                    content_type: application/json
+                    body:
+                      schema: {}
+        '422':
+          description: The schema is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                bad_type:
+                  summary: unsupported type
+                  value:
+                    code: unsupported_schema
+                    error: '''a'': unsupported type "float"'
+                  x-request:
+                    content_type: application/json
+                    body:
+                      schema:
+                        a: float
+                      records: []
+  /v1/repair:
+    post:
+      summary: Repair broken JSON text, optionally normalize it too
+      description: Fixes code fences, text around the JSON, trailing commas, single quotes, unquoted keys, comments,
+        Python literals and cut-off output. Refuses to guess when the text is ambiguous.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RepairRequest'
+            examples:
+              fenced_and_broken:
+                summary: fenced and broken
+                value:
+                  text: 'Here you go:
+
+                    ```json
+
+                    {''name'': ''Frenzo'', active: True, tags: [''a'', ''b'',],}
+
+                    ```'
+              repair_and_normalize:
+                summary: repair and normalize
+                value:
+                  text: 'Result: {''UserID'': ''42'', active: True,}'
+                  schema:
+                    user_id: integer
+                    active: boolean
+      responses:
+        '200':
+          description: Repaired value and the list of fixes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepairResponse'
+              examples:
+                fenced_and_broken:
+                  summary: fenced and broken
+                  value:
+                    fixes:
+                    - removed markdown code fence
+                    - converted single quotes to double quotes (4)
+                    - quoted unquoted keys (2)
+                    - converted Python or JavaScript literals to JSON
+                    - removed trailing comma (2)
+                    parsed:
+                      active: true
+                      name: Frenzo
+                      tags:
+                      - a
+                      - b
+                repair_and_normalize:
+                  summary: repair and normalize
+                  value:
+                    changes:
+                    - mapped key 'UserID' -> 'user_id'
+                    - '''user_id'': coerced string to integer'
+                    errors: []
+                    fixes:
+                    - extracted JSON from surrounding text
+                    - converted single quotes to double quotes (2)
+                    - quoted unquoted keys
+                    - converted Python or JavaScript literals to JSON
+                    - removed trailing comma
+                    normalized:
+                      active: true
+                      user_id: 42
+                    parsed:
+                      UserID: '42'
+                      active: true
+        '400':
+          description: Bad request shape
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missing_text:
+                  summary: missing text
+                  value:
+                    code: invalid_request
+                    error: request must include 'text' as a string
+                  x-request:
+                    content_type: application/json
+                    body: {}
+        '422':
+          description: The text cannot be repaired safely, or the schema is not valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                unrepairable:
+                  summary: unrepairable
+                  value:
+                    code: unrepairable
+                    error: unexpected text at position 0
+                  x-request:
+                    content_type: application/json
+                    body:
+                      text: no json here
+                two_objects:
+                  summary: two objects
+                  value:
+                    code: unrepairable
+                    error: more than one JSON object found, send only one
+                  x-request:
+                    content_type: application/json
+                    body:
+                      text: '{"a": 1} and {"b": 2}'
 components:
   schemas:
     Health:
       type: object
-      required: [status]
+      required:
+      - status
       properties:
-        status: {type: string, const: ok}
+        status:
+          type: string
+          const: ok
     Version:
       type: object
-      required: [service, version, schema_version, commit]
+      required:
+      - service
+      - version
+      - schema_version
+      - commit
       properties:
-        service: {type: string, const: schemify}
-        version: {type: string}
-        schema_version: {type: string}
-        commit: {type: string}
+        service:
+          type: string
+          const: schemify
+        version:
+          type: string
+        schema_version:
+          type: string
+        commit:
+          type: string
+    FieldSpec:
+      description: A type name, or an object with options.
+      oneOf:
+      - type: string
+        enum:
+        - string
+        - number
+        - integer
+        - boolean
+        - array
+        - object
+        - date
+        - money
+        - percent
+      - type: object
+        required:
+        - type
+        properties:
+          type:
+            type: string
+            enum:
+            - string
+            - number
+            - integer
+            - boolean
+            - array
+            - object
+            - date
+            - money
+            - percent
+          required:
+            type: boolean
+            default: true
+          default:
+            description: Used when the field is missing or null.
+          enum:
+            type: array
+            items:
+              type: string
+            description: Allowed values for type string.
+          properties:
+            type: object
+            additionalProperties:
+              $ref: '#/components/schemas/FieldSpec'
+          items:
+            $ref: '#/components/schemas/FieldSpec'
+        additionalProperties: false
+    Schema:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/FieldSpec'
     NormalizeRequest:
       type: object
-      required: [data, schema]
+      required:
+      - data
+      - schema
       properties:
         data:
           type: object
           description: The messy input. Unknown fields are ignored.
         schema:
-          type: object
-          description: Map of target field name to a supported type.
-          additionalProperties:
-            type: string
-            enum: [string, number, boolean, array, object]
+          $ref: '#/components/schemas/Schema'
     NormalizeResponse:
       type: object
-      required: [normalized, changes, errors]
+      required:
+      - normalized
+      - changes
+      - errors
       properties:
-        normalized: {type: object}
+        normalized:
+          type: object
         changes:
           type: array
-          items: {type: string}
+          items:
+            type: string
         errors:
           type: array
-          items: {type: string}
+          items:
+            type: string
+    BatchRequest:
+      type: object
+      required:
+      - schema
+      - records
+      properties:
+        schema:
+          $ref: '#/components/schemas/Schema'
+        records:
+          type: array
+          maxItems: 100
+    BatchResponse:
+      type: object
+      required:
+      - results
+      - summary
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            required:
+            - index
+            - normalized
+            - changes
+            - errors
+        summary:
+          type: object
+          required:
+          - records
+          - records_with_errors
+    RepairRequest:
+      type: object
+      required:
+      - text
+      properties:
+        text:
+          type: string
+        schema:
+          $ref: '#/components/schemas/Schema'
+    RepairResponse:
+      type: object
+      required:
+      - parsed
+      - fixes
+      properties:
+        parsed:
+          description: The repaired JSON value.
+        fixes:
+          type: array
+          items:
+            type: string
+        normalized:
+          type: object
+        changes:
+          type: array
+          items:
+            type: string
+        errors:
+          type: array
+          items:
+            type: string
     Error:
       type: object
-      required: [error, code]
+      required:
+      - error
+      - code
       properties:
-        error: {type: string}
-        code: {type: string}
+        error:
+          type: string
+        code:
+          type: string

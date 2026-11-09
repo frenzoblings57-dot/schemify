@@ -10,7 +10,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-COPY app.py normalizer.py gunicorn.conf.py ./
+COPY app.py normalizer.py repair.py gunicorn.conf.py ./
 
 ARG GIT_COMMIT=unknown
 ENV GIT_COMMIT=${GIT_COMMIT}

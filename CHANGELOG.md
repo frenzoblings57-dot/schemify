@@ -1,18 +1,34 @@
 # Changelog
 
+## 0.3.0
+New endpoints:
+- `POST /v1/repair`: fixes broken JSON text (code fences, text around the JSON, trailing commas,
+  single quotes, unquoted keys, comments, Python literals, cut-off output). Optionally normalizes
+  the result in the same call. Refuses to guess when the text is ambiguous.
+- `POST /v1/batch`: normalize up to 100 records with one schema in a single call.
+
+`/v1/normalize` is unchanged for existing clients. New, optional schema features:
+- Nested objects (`properties`) and lists (`items`), including lists of objects.
+- New types: `integer`, `date` (to ISO 8601), `money` ("$1,200" to 1200), `percent` ("12%" to 12).
+- `enum`, `default` and `required: false` per field.
+- Error and change messages name the full path, for example `'orders[0].price'`.
+
+Safety and quality:
+- Infinite numbers (`1e999`) are rejected everywhere, so a response is always valid JSON.
+- Ambiguous dates like `03/04/2026` are refused, never guessed.
+- Reports are capped at 200 entries per list.
+- Schemas are limited to 6 levels of nesting.
+- 244 tests, including random-input fuzz tests.
+
+Note: `integer` used to be an unsupported type (422). It is now supported.
+
+## 0.2.1
+- Added `GET /`.
+
 ## 0.2.0
-- Production runtime: Gunicorn, pinned dependencies, Dockerfile, compose file for local/staging.
+- Gunicorn, pinned dependencies, Dockerfile, OpenAPI spec, tests, CI.
 - Every response, including errors, is a JSON object with `error` and `code`.
-- New status codes: 413 (body too large), 415 (not JSON), 422 (unsupported schema type).
-- Request size limit (default 256 KiB, set `MAX_BODY_BYTES`).
-- Rejects `NaN` and `Infinity` literals, and deeply nested JSON, with 400.
-- Ambiguous input keys (for example `user_id` and `UserID`) are reported instead of silently picking one.
-- Number parsing is strict: no `nan`, `inf`, or `1_000`. Numeric strings up to 64 characters.
-- Booleans: `"true"`, `"yes"`, `"1"` and `"false"`, `"no"`, `"0"` (any case). Numbers only if 0 or 1.
-- Output is independent of the order of keys in the schema.
-- Error messages no longer echo input values.
-- Added `/healthz` and richer `/v1/version`.
-- Added OpenAPI 3.1 spec, pytest suite, smoke test, CI.
+- Ambiguous input keys are reported instead of guessed.
 
 ## 0.1.0
-- First prototype: Flask app with `/v1/health`, `/v1/version`, `/v1/normalize`.
+- First prototype.
